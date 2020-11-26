@@ -26,7 +26,7 @@ m1 = 10
 m2 = 30
 m3 = 10
 m4 = 30
-m5 = 1000
+m5 = 300
 m6 = 20
 m7 = 5
 m8 = 10
@@ -246,6 +246,8 @@ def main():
     ns = {}
     L = []
     scheduled_surgery = []
+    infeasible_pair_surgeon = []
+    infeasible_pair_room = []
     start = time.time()
     for d in list_date:
         print("day={:}".format(d))
@@ -335,16 +337,18 @@ def main():
                     for surgery1 in waiting_list:
                         for surgery2 in waiting_list:
                             if surgery1 != surgery2:
-                                operating_room_planning += pulp.lpSum(
-                                    x[surgery1, r, d, l] for r in list_room if x_val[surgery1, r, d, i] == 1) \
-                                                           + pulp.lpSum(
-                                    x[surgery2, r, d, l] for r in list_room if x_val[surgery2, r, d, i] == 1) \
-                                                           + pulp.lpSum(
-                                    q[surgery1, surgeon, d, l] for surgeon in list_surgeon if
-                                    q_val[surgery1, surgeon, d, i] == 1) \
-                                                           + pulp.lpSum(
-                                    q[surgery2, surgeon, d, l] for surgeon in list_surgeon if
-                                    q_val[surgery2, surgeon, d, i] == 1) <= 3
+                              if (surgery1, surgery2) in infeasible_pair_room or (surgery1, surgery2) in infeasible_pair_surgeon:
+                                    operating_room_planning += pulp.lpSum(
+                                        x[surgery1, r, d, l] for r in list_room if
+                                        x_val[surgery1, r, d, i] == 1) \
+                                                               + pulp.lpSum(
+                                        x[surgery2, r, d, l] for r in list_room if
+                                        x_val[surgery2, r, d, i] == 1) + pulp.lpSum(
+                                        q[surgery1, surgeon, d, l] for surgeon in list_surgeon if
+                                        q_val[surgery1, surgeon, d, i] == 1) \
+                                                               + pulp.lpSum(
+                                        q[surgery2, surgeon, d, l] for surgeon in list_surgeon if
+                                        q_val[surgery2, surgeon, d, i] == 1) <= 3
 
             result_status = operating_room_planning.solve(solver)
             print('ORP={:}'.format(pulp.LpStatus[result_status]))
@@ -418,14 +422,6 @@ def main():
                                 surgery2, surgery1, r, d, l] == 1, 'c1_' + str(surgery1.get_surgery_id()) + '_' + str(
                                 surgery2.get_surgery_id()) + '_' + str(r)
 
-            for surgeon in planned_surgeon:
-                list_surgery_by_k = dict_surgery_surgeon[surgeon]
-                for surgery1 in list_surgery_by_k:
-                    for surgery2 in list_surgery_by_k:
-                        if surgery1 != surgery2:
-                            operating_room_scheduling += z[surgery1, surgery2, surgeon, d, l] + z[
-                                surgery2, surgery1, surgeon, d, l] == 1
-
             for surgery in planned_surgery:
                 operating_room_scheduling += ts[surgery, l] >= surgery.get_preparation_mean()
 
@@ -436,7 +432,15 @@ def main():
                         if surgery1 != surgery2:
                             operating_room_scheduling += ts[surgery2, l] - surgery2.get_preparation_time() >= ts[
                                 surgery1, l] + surgery1.get_surgery_time() + surgery1.get_preparation_time() - M * (
-                                                                     1 - y[surgery1, surgery2, r, d, l])
+                                                                     1 - y[surgery1, surgery2, r, d, l]), 'room_overlaps_' + str(surgery1.get_surgery_id()) + '_' + str(surgery2.get_surgery_id())
+
+            for surgeon in planned_surgeon:
+                list_surgery_by_k = dict_surgery_surgeon[surgeon]
+                for surgery1 in list_surgery_by_k:
+                    for surgery2 in list_surgery_by_k:
+                        if surgery1 != surgery2:
+                            operating_room_scheduling += z[surgery1, surgery2, surgeon, d, l] + z[
+                                surgery2, surgery1, surgeon, d, l] == 1
 
             for surgeon in planned_surgeon:
                 list_surgery_by_k = dict_surgery_surgeon[surgeon]
@@ -445,8 +449,7 @@ def main():
                         if surgery1 != surgery2:
                             operating_room_scheduling += ts[surgery2, l] >= ts[
                                 surgery1, l] + surgery1.get_surgery_time() + PT - M * (
-                                                                     1 - z[surgery1, surgery2, surgeon, d, l])
-
+                                                                     1 - z[surgery1, surgery2, surgeon, d, l]), 'surgeon_overlaps_' + str(surgery1.get_surgery_id()) + '_' + str(surgery2.get_surgery_id())
             for surgeon in planned_surgeon:
                 for surgery in dict_surgery_surgeon[surgeon]:
                     operating_room_scheduling += tsS[surgeon, d, l] <= ts[surgery, l]
@@ -473,6 +476,25 @@ def main():
             result_status2 = operating_room_scheduling.solve(solver)
             print('ORS={:}'.format(pulp.LpStatus[result_status2]))
             if pulp.LpStatus[result_status2] == "Infeasible":
+                for r in list_room:
+                    list_surgery_in_r = dict_surgery_room[r]
+                    for surgery1 in list_surgery_in_r:
+                        for surgery2 in list_surgery_in_r:
+                            if surgery1 != surgery2:
+                                c = operating_room_scheduling.constraints['room_overlaps_' + str(surgery1.get_surgery_id()) + '_' + str(surgery2.get_surgery_id())]
+                                print('room', c.valid(0))
+                                if not c.valid(0):
+                                    infeasible_pair_room.append((surgery1, surgery2))
+                for surgeon in planned_surgeon:
+                    list_surgery_by_k = dict_surgery_surgeon[surgeon]
+                    for surgery1 in list_surgery_by_k:
+                        for surgery2 in list_surgery_by_k:
+                            if surgery1 != surgery2:
+                                c = operating_room_scheduling.constraints['surgeon_overlaps_' + str(surgery1.get_surgery_id()) + '_' + str(surgery2.get_surgery_id())]
+                                print('surgeon', c.valid(0))
+                                if not c.valid(0):
+                                    infeasible_pair_surgeon.append(
+                                        (surgery1, surgery2))
                 continue
             else:
                 feasibility_criteria = True
@@ -510,11 +532,18 @@ def main():
     print("目的関数値={:}".format(objective_value))
     over_time = sum(ot_val[r, d] for r in list_room for d in list_date)
     print("残業時間={:}".format(over_time))
+    print(len(list_surgery), len(list_surgeon), len(list_room), len(list_date))
+    print("unscheduled_surgery")
+    print('scheduled surgery')
+    for surgery in scheduled_surgery:
+        print(surgery.get_surgery_id(), surgery.get_surgery_mean(), surgery.get_group())
+    print('unscheduled surgery')
+    for surgery in rest_surgery:
+        print(surgery.get_surgery_id(), surgery.get_surgery_mean(), surgery.get_group())
     create_excel_file(scheduled_surgery, list_date, list_room, ts_val, x_val)
     create_excel_file2(scheduled_surgery, list_date, list_surgeon, ts_val, q_val)
     graph.create_ganttchart(file_path, save_path)
     graph.create_surgeon_ganttchart(file_path2, save_path)
-    print(len(list_surgery), len(list_surgeon), len(list_room), len(list_date))
 
 
 if __name__ == '__main__':
