@@ -427,14 +427,6 @@ def main():
             operating_room_scheduling += m6 * pulp.lpSum(ot[r, d, l] for r in list_room) + m7 * pulp.lpSum(
                 wt[surgeon, d, l] for surgeon in planned_surgeon) + m8 * pulp.lpSum(
                 surgery.get_priority() * ts[surgery, l] for surgery in planned_surgery)
-            for r in list_room:
-                list_surgery_in_r = dict_surgery_room[r]
-                for surgery1 in list_surgery_in_r:
-                    for surgery2 in list_surgery_in_r:
-                        if surgery1 != surgery2:
-                            operating_room_scheduling += y[surgery1, surgery2, r, d, l] + y[
-                                surgery2, surgery1, r, d, l] == 1, 'c1_' + str(surgery1.get_surgery_id()) + '_' + str(
-                                surgery2.get_surgery_id()) + '_' + str(r)
 
             for surgery in planned_surgery:
                 operating_room_scheduling += ts[surgery, l] >= surgery.get_preparation_mean()
@@ -443,27 +435,36 @@ def main():
                 list_surgery_in_r = dict_surgery_room[r]
                 for surgery1 in list_surgery_in_r:
                     for surgery2 in list_surgery_in_r:
-                        if surgery1 != surgery2:
+                        if list_surgery_in_r.index(surgery1) < list_surgery_in_r.index(surgery2):
                             operating_room_scheduling += ts[surgery2, l] - surgery2.get_preparation_time() >= ts[
                                 surgery1, l] + surgery1.get_surgery_time() + surgery1.get_cleaning_time() - M * (
-                                                                     1 - y[surgery1, surgery2, r, d, l]), 'room_overlaps_' + str(surgery1.get_surgery_id()) + '_' + str(surgery2.get_surgery_id())
+                                                                     1 - y[surgery1, surgery2, r, d, l]), 'room_overlaps1_' + str(surgery1.get_surgery_id()) + '_' + str(surgery2.get_surgery_id())
+            for r in list_room:
+                list_surgery_in_r = dict_surgery_room[r]
+                for surgery1 in list_surgery_in_r:
+                    for surgery2 in list_surgery_in_r:
+                        if list_surgery_in_r.index(surgery1) < list_surgery_in_r.index(surgery2):
+                            operating_room_scheduling += ts[surgery1, l] - surgery1.get_preparation_time() >= ts[
+                                surgery2, l] + surgery2.get_surgery_time() + surgery2.get_cleaning_time() - M * (
+                                                                     y[surgery1, surgery2, r, d, l]), 'room_overlaps2_' + str(surgery1.get_surgery_id()) + '_' + str(surgery2.get_surgery_id())
 
             for surgeon in planned_surgeon:
                 list_surgery_by_k = dict_surgery_surgeon[surgeon]
                 for surgery1 in list_surgery_by_k:
                     for surgery2 in list_surgery_by_k:
-                        if surgery1 != surgery2:
-                            operating_room_scheduling += z[surgery1, surgery2, surgeon, d, l] + z[
-                                surgery2, surgery1, surgeon, d, l] == 1
-
-            for surgeon in planned_surgeon:
-                list_surgery_by_k = dict_surgery_surgeon[surgeon]
-                for surgery1 in list_surgery_by_k:
-                    for surgery2 in list_surgery_by_k:
-                        if surgery1 != surgery2:
+                        if list_surgery_by_k.index(surgery1) < list_surgery_by_k.index(surgery2):
                             operating_room_scheduling += ts[surgery2, l] >= ts[
                                 surgery1, l] + surgery1.get_surgery_time() + PT - M * (
-                                                                     1 - z[surgery1, surgery2, surgeon, d, l]), 'surgeon_overlaps_' + str(surgery1.get_surgery_id()) + '_' + str(surgery2.get_surgery_id())
+                                                                     1 - z[surgery1, surgery2, surgeon, d, l]), 'surgeon_overlaps1_' + str(surgery1.get_surgery_id()) + '_' + str(surgery2.get_surgery_id())
+            for surgeon in planned_surgeon:
+                list_surgery_by_k = dict_surgery_surgeon[surgeon]
+                for surgery1 in list_surgery_by_k:
+                    for surgery2 in list_surgery_by_k:
+                        if list_surgery_by_k.index(surgery1) < list_surgery_by_k.index(surgery2):
+                            operating_room_scheduling += ts[surgery1, l] >= ts[
+                                surgery2, l] + surgery2.get_surgery_time() + PT - M * (
+                                                                     z[surgery1, surgery2, surgeon, d, l]), 'surgeon_overlaps2_' + str(surgery1.get_surgery_id()) + '_' + str(surgery2.get_surgery_id())
+
             for surgeon in planned_surgeon:
                 for surgery in dict_surgery_surgeon[surgeon]:
                     operating_room_scheduling += tsS[surgeon, d, l] <= ts[surgery, l]
@@ -494,21 +495,22 @@ def main():
                     list_surgery_in_r = dict_surgery_room[r]
                     for surgery1 in list_surgery_in_r:
                         for surgery2 in list_surgery_in_r:
-                            if surgery1 != surgery2:
-                                c = operating_room_scheduling.constraints['room_overlaps_' + str(surgery1.get_surgery_id()) + '_' + str(surgery2.get_surgery_id())]
-                                print('room', c.valid(0))
-                                if not c.valid(0):
+                            if list_surgery_in_r.index(surgery1) < list_surgery_in_r.index(surgery2):
+                                c1 = operating_room_scheduling.constraints['room_overlaps1_' + str(surgery1.get_surgery_id()) + '_' + str(surgery2.get_surgery_id())]
+                                c2 = operating_room_scheduling.constraints['room_overlaps2_' + str(surgery1.get_surgery_id()) + '_' + str(surgery2.get_surgery_id())]
+                                print('room', c1.valid(0), c2.valid(0))
+                                if not c1.valid(0) or not c2.valid(0):
                                     infeasible_pair_room.append((surgery1, surgery2))
                 for surgeon in planned_surgeon:
                     list_surgery_by_k = dict_surgery_surgeon[surgeon]
                     for surgery1 in list_surgery_by_k:
                         for surgery2 in list_surgery_by_k:
-                            if surgery1 != surgery2:
-                                c = operating_room_scheduling.constraints['surgeon_overlaps_' + str(surgery1.get_surgery_id()) + '_' + str(surgery2.get_surgery_id())]
-                                print('surgeon', c.valid(0))
-                                if not c.valid(0):
-                                    infeasible_pair_surgeon.append(
-                                        (surgery1, surgery2))
+                            if list_surgery_by_k.index(surgery1) < list_surgery_by_k.index(surgery2):
+                                c1 = operating_room_scheduling.constraints['surgeon_overlaps1_' + str(surgery1.get_surgery_id()) + '_' + str(surgery2.get_surgery_id())]
+                                c2 = operating_room_scheduling.constraints['surgeon_overlaps2_' + str(surgery1.get_surgery_id()) + '_' + str(surgery2.get_surgery_id())]
+                                print('surgeon', c1.valid(0), c2.valid(0))
+                                if not c1.valid(0) or not c2.valid(0):
+                                    infeasible_pair_surgeon.append((surgery1, surgery2))
                 continue
             else:
                 feasibility_criteria = True
