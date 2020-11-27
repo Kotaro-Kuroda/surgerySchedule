@@ -1,83 +1,44 @@
-import csv
-import re
+import distribution_csv
 import os
-import matplotlib as mpl
+import matplotlib.pyplot as plt
 import numpy as np
-mpl.rcParams['font.family'] = "IPAexGothic"
-
 home = os.environ['HOME']
-path = '/Documents/data-july/operations.csv'
-l = []
-with open(home + path) as f:
-    reader = csv.reader(f)
-    l = [row for row in reader]
-group = []
-for i in range(1, len(l)):
-    if l[i][6] != '':
-        group.append(l[i][6])
-
-group = list(set(group))
-def getOccupancyDuration(str):
-    hourexp = re.compile(r'\d+\s*hours')
-    minexp = re.compile(r'\d+\s*min')
-    numexp = re.compile(r'\d+')
-    hour = int(numexp.search(hourexp.search(str).group()).group())
-    minute = int(numexp.search(minexp.search(str).group()).group())
-    return hour * 60 + minute
+path = home + '/Documents/data-july/operations_with_jisseki_remake.csv'
+file_path = home + '/Documents/surgerySchedule/distribution.csv'
 
 
-def get_group_total_distribution(g):
-    list_surgerytime = []
-    for i in range(1, len(l)):
-        if g == l[i][6]:
-            if l[i][3] != "":
-                delta_min = getOccupancyDuration(l[i][3])
-                if delta_min > 0:
-                    list_surgerytime.append(delta_min)
-    mu = round(sum(i for i in list_surgerytime) / len(list_surgerytime), 2)
-    sigma = round(sum((i - mu) ** 2 for i in list_surgerytime) / len(list_surgerytime), 2)
-    return [mu, sigma]
-
-def get_group_surgery_time_distribution(g):
-    list_surgerytime = []
-    for i in range(1, len(l)):
-        if g == l[i][6]:
-            if l[i][3] != "":
-                delta_min = getOccupancyDuration(l[i][3])
-                if delta_min > 0:
-                    list_surgerytime.append(delta_min)
-    mu = round(sum(np.log(i * 0.7) for i in list_surgerytime) / len(list_surgerytime), 2)
-    sigma = round(sum((np.log(i * 0.7) - mu) ** 2 for i in list_surgerytime) / len(list_surgerytime), 2)
-    u = np.exp(mu + sigma / 2)
-    d = np.exp(2 * mu + sigma) * (np.exp(sigma) - 1)
-    return [u, d]
+def log_normal(x, mu, sigma):
+    return 1 / (np.sqrt(2 * np.pi * sigma) * x) * np.exp(-(np.log(x) - mu) ** 2 / (2 * sigma))
 
 
-def get_group_preparation_distribution(g):
-    list_surgerytime = []
-    for i in range(1, len(l)):
-        if g == l[i][6]:
-            if l[i][3] != "":
-                delta_min = getOccupancyDuration(l[i][3])
-                if delta_min > 0:
-                    list_surgerytime.append(delta_min)
-    mu = round(sum(np.log(i * 0.2) for i in list_surgerytime) / len(list_surgerytime), 2)
-    sigma = round(sum((np.log(i * 0.2) - mu) ** 2 for i in list_surgerytime) / len(list_surgerytime), 2)
-    u = np.exp(mu + sigma / 2)
-    d = np.exp(2 * mu + sigma) * (np.exp(sigma) - 1)
-    return [u, d]
+def draw_figure(g, time_dict, distribution_dict, kind):
+    mu = distribution_dict[g, 'mu']
+    sigma = distribution_dict[g, 'sigma']
+    time_list = time_dict[g]
+    plt.hist(time_list, density=True)
+    x = np.arange(0.01, max(time_list) + 20.01, 0.01)
+    y = log_normal(x, mu, sigma)
+    plt.plot(x, y)
+    plt.title(str(g) + str(kind))
+    plt.savefig('/Users/kurodakotaro/Documents/image/distribution/' + str(g) + '_' + kind + '.png')
+    plt.show()
 
 
-def get_group_cleaning_distribution(g):
-    list_surgerytime = []
-    for i in range(1, len(l)):
-        if g == l[i][6]:
-            if l[i][3] != "":
-                delta_min = getOccupancyDuration(l[i][3])
-                if delta_min > 0:
-                    list_surgerytime.append(delta_min)
-    mu = round(sum(np.log(i * 0.1) for i in list_surgerytime) / len(list_surgerytime), 2)
-    sigma = round(sum((np.log(i * 0.1) - mu) ** 2 for i in list_surgerytime) / len(list_surgerytime), 2)
-    u = np.exp(mu + sigma / 2)
-    d = np.exp(2 * mu + sigma) * (np.exp(sigma) - 1)
-    return [u, d]
+def main():
+    csv_distribution = distribution_csv.CsvDistribution(path, file_path)
+    list_group = csv_distribution.get_group_list()
+    preparation_distribution = csv_distribution.get_group_distribution('preparation')
+    surgery_distribution = csv_distribution.get_group_distribution('surgery')
+    cleaning_distribution = csv_distribution.get_group_distribution('cleaning')
+    preparation_dict = csv_distribution.get_time_list('preparation')
+    surgery_dict = csv_distribution.get_time_list('surgery')
+    cleaning_dict = csv_distribution.get_time_list('cleaning')
+    for g in list_group:
+        if g != '関節外科':
+            draw_figure(g, preparation_dict, preparation_distribution, 'preparation')
+            draw_figure(g, surgery_dict, surgery_distribution, 'surgery')
+            draw_figure(g, cleaning_dict, cleaning_distribution, 'cleaning')
+
+
+if __name__ == '__main__':
+    main()
