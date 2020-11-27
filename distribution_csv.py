@@ -119,9 +119,12 @@ class CsvDistribution:
                 row = [g, preparation_mu, preparation_mean, preparation_sigma, preparation_variance, surgery_mu, surgery_mean, surgery_sigma, surgery_variance, cleaning_mu, cleaning_mean, cleaning_sigma, cleaning_variance, total_mu, total_mean, total_sigma, total_variance]
                 writer.writerow(row)
 
+def main():
+    home = os.environ['HOME']
+    path = home + '/Documents/data-july/operations_with_jisseki_remake.csv'
+    file_path = home + '/Documents/surgerySchedule/distribution.csv'
+    csv_distribution = CsvDistribution(path, file_path)
+    csv_distribution.make_csv_file()
 
-home = os.environ['HOME']
-path = home + '/Documents/data-july/operations_with_jisseki_remake.csv'
-file_path = home + '/Documents/surgerySchedule/distribution.csv'
-csv_distribution = CsvDistribution(path, file_path)
-csv_distribution.make_csv_file()
+if __name__ == '__main__':
+    main()
