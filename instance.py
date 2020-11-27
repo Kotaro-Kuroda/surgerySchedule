@@ -73,6 +73,12 @@ class SurgeryInstance:
                 elif surgery_time > 200:
                     group = group + '(high)'
 
+            if group == '心臓外科':
+                if surgery_time > 0 and surgery_time <= 150:
+                    group = group + '(low)'
+                elif surgery_time > 150:
+                    group = group + '(high)'
+
             distribution_dict = self.get_dict_distribution()
             preparation_mean = distribution_dict[group, 'preparation_mean']
             surgery_mean = distribution_dict[group, 'surgery_mean']
@@ -83,7 +89,7 @@ class SurgeryInstance:
 
             cleaning_time = self.get_delta_time(row[12], row[13])
             release_date = np.random.randint(1, self.num_date + 1)
-            due_date = min(release_date + np.random.randint(1, self.num_date + 1), self.num_date + 1)
+            due_date = np.random.randint(release_date, self.num_date + 1)
             priority = 1 / (np.random.randint(2, 5) + (due_date - release_date))
             surgery_type = row[8].split(",")
             surgery = surgery_class.Surgery(operation_id, preparation_time, surgery_time, cleaning_time, group, surgery_type, release_date, due_date, priority, preparation_mean, surgery_mean, cleaning_mean, random_preparation, random_surgery, random_cleaning)
