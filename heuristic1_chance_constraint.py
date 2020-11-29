@@ -18,20 +18,20 @@ distribution_path = home + '/Documents/surgerySchedule/distribution.csv'
 file_path = home + '/Documents/surgerySchedule/room_schedule_h1_cc.xlsx'
 file_path2 = home + '/Documents/surgerySchedule/surgeon_schedule_h1_cc.xlsx'
 save_path = '/Users/kurodakotaro/Documents/image/CCP/'
-num_surgery = 30
+num_surgery = 10
 num_date = 1
 seed = 1
 
-alpha = 0.90
-m1 = 10
-m2 = 30
-m3 = 20
-m4 = 40
-m5 = 300
-m6 = 20
-m7 = 5
-m8 = 10
-m9 = 100
+alpha = 0.95
+m1 = 1
+m2 = 3
+m3 = 2
+m4 = 4
+m5 = 30
+m6 = 2
+m7 = 0.5
+m8 = 1
+m9 = 10
 m10 = 1
 initial = time.time()
 
@@ -118,10 +118,7 @@ def grad_log_normal_cc(x_vec, mean_vec, variance_vec, lst_surgery, ot_val):
 def long_surgery(surgery, distribution_dict):
     total_mu = distribution_dict[surgery.get_group(), 'total_mu']
     total_sigma = distribution_dict[surgery.get_group(), 'total_sigma']
-    if np.exp(total_mu + norm.ppf(alpha) * np.sqrt(total_sigma)) > T + O_max:
-        return True
-    else:
-        return False
+    return np.exp(total_mu + norm.ppf(alpha) * np.sqrt(total_sigma)) > T + O_max
 
 
 def max_surgery_time(lst_surgery, distribution_dict):
@@ -155,6 +152,37 @@ def initialize_parameter(list_surgery, list_room, list_surgeon, list_date):
         for d in list_date:
             wt_val[surgeon, d] = 0
     return x_val, q_val, ot_val, wt_val, ts_val
+
+
+def sort_surgery(list_surgery):
+    for i in range(len(list_surgery) - 1):
+        for j in range(i + 1, len(list_surgery)):
+            surgery1 = list_surgery[i]
+            surgery2 = list_surgery[j]
+            if surgery1.get_priority() < surgery2.get_priority():
+                temp = surgery1
+                list_surgery[i] = surgery2
+                list_surgery[j] = temp
+    return list_surgery
+
+
+def get_empty_room(room, date, list_surgery, x_val):
+    return not sum(x_val[surgery, room, date] for surgery in list_surgery) > 0
+
+
+def get_scheduled_surgery_info(surgery, list_room, list_surgeon, list_date, x_val, q_val):
+    scheduled_date = 0
+    scheduled_surgeon = 0
+    scheduled_room = 0
+    for d in list_date:
+        for surgeon in list_surgeon:
+            if q_val[surgery, surgeon, d] == 1:
+                scheduled_surgeon = surgeon
+                scheduled_date = d
+        for r in list_room:
+            if x_val[surgery, r, d] == 1:
+                scheduled_room = r
+    return scheduled_room, scheduled_surgeon.get_surgeon_id(), scheduled_date
 
 
 def main():
@@ -234,9 +262,12 @@ def main():
                 surgery.get_priority() * (1 - pulp.lpSum(x[surgery, r, d, l] for r in list_room)) for surgery in
                 waiting_list)
             objective += m6 * pulp.lpSum(ot[r, d, l] for r in list_room)
-            objective += m9 * pulp.lpSum(ost[surgeon, d, l] for surgeon in list_surgeon) + m10 * ns[d, l]
-            objective += 100 * pulp.lpSum(ar[r, d, l] for r in list_room)
             operating_room_planning += objective
+            list_long_surgery = [surgery for surgery in waiting_list if long_surgery(surgery, distribution_dict)]
+            for surgery in list_long_surgery:
+                print(surgery.get_surgery_id())
+            list_long_surgery = sort_surgery(list_long_surgery)
+            operating_room_planning += pulp.lpSum(x[list_long_surgery[0], r, d, l] for r in list_room) == 1
             for surgery in waiting_list:
                 operating_room_planning += pulp.lpSum(x[surgery, r, d, l] for r in list_room) <= 1
             for surgery in waiting_list:
@@ -245,14 +276,13 @@ def main():
             for surgery in waiting_list:
                 operating_room_planning += pulp.lpSum(x[surgery, r, d, l] for r in list_room) == pulp.lpSum(
                     q[surgery, surgeon, d, l] for surgeon in list_surgeon)
+            """
             for surgeon in list_surgeon:
                 operating_room_planning += ost[surgeon, d, l] >= pulp.lpSum(
                     q[surgery, surgeon, d, l] for surgery in waiting_list) - len(waiting_list) / len(list_surgeon)
-
-            for surgeon in list_surgeon:
                 operating_room_planning += - ost[surgeon, d, l] <= pulp.lpSum(
                     q[surgery, surgeon, d, l] for surgery in waiting_list) - len(waiting_list) / len(list_surgeon)
-
+            """
             for r in list_room:
                 a = {}
                 ot1 = 0
@@ -279,18 +309,20 @@ def main():
                     grad_dict[surgery] * (x[surgery, r, d, l] - a[surgery]) for surgery in waiting_list) + grad_dict[
                              'ot'] * (ot[r, d, l] - ot1)
                 operating_room_planning += approx <= 0
-                operating_room_planning += ot[r, d, l] <= max_surgery_time(waiting_list, distribution_dict) - T + 60
-
+                operating_room_planning += ot[r, d, l] <= O_max + M * x[list_long_surgery[0], r, d, l]
+            """
             for r in list_room:
                 operating_room_planning += ar[r, d, l] >= pulp.lpSum(
                     x[surgery, r, d, l] for surgery in waiting_list) - len(waiting_list) / len(list_room)
                 operating_room_planning += -ar[r, d, l] <= pulp.lpSum(
                     x[surgery, r, d, l] for surgery in waiting_list) - len(waiting_list) / len(list_room)
-
+            """
+            """
             operating_room_planning += ns[d, l] >= pulp.lpSum(
                 x[surgery, r, d, l] for surgery in waiting_list for r in list_room) - len(list_surgery) / len(list_date)
             operating_room_planning += -ns[d, l] <= pulp.lpSum(
                 x[surgery, r, d, l] for surgery in waiting_list for r in list_room) - len(list_surgery) / len(list_date)
+            """
             for surgery in waiting_list:
                 for r in dict_not_available_room[surgery]:
                     operating_room_planning += x[surgery, r, d, l] == 0
@@ -409,7 +441,10 @@ def main():
             for surgery in planned_surgery:
                 mean = distribution_dict[surgery.get_group(), 'preparation_mean']
                 variance = distribution_dict[surgery.get_group(), 'preparation_variance']
-                operating_room_scheduling += ts[surgery, l] >= get_right_hand(alpha, mean, variance)
+                if surgery == list_long_surgery[0]:
+                    operating_room_scheduling += ts[surgery, l] == get_right_hand(alpha, mean, variance)
+                else:
+                    operating_room_scheduling += ts[surgery, l] >= get_right_hand(alpha, mean, variance)
 
             for r in list_room:
                 list_surgery_in_r = dict_surgery_room[r]
@@ -459,7 +494,8 @@ def main():
                 operating_room_scheduling += ot2[r, d, l] >= msR[r, d, l] - T
 
             for r in list_room:
-                operating_room_scheduling += ot2[r, d, l] <= max_surgery_time(waiting_list, distribution_dict) - T + 30
+                if x_val[list_long_surgery[0], r, d, l] != 1:
+                    operating_room_scheduling += ot2[r, d, l] <= 120
 
             for surgeon in planned_surgeon:
                 mean = sum(distribution_dict[s.get_group(), 'surgery_mean'] for s in dict_surgery_surgeon[surgeon])
@@ -513,16 +549,19 @@ def main():
     print("残業時間={:}".format(over_time))
     print('scheduled surgery')
     for surgery in scheduled_surgery:
-        print(surgery.get_surgery_id(), surgery.get_surgery_mean(), surgery.get_group())
+        print(surgery.get_surgery_id(), surgery.get_surgery_mean(), surgery.get_group(), get_scheduled_surgery_info(surgery, list_room, list_surgeon, list_date, x_val, q_val), ts_val[surgery])
     print('unscheduled surgery')
     for surgery in rest_surgery:
-        print(surgery.get_surgery_id(), surgery.get_surgery_mean(), surgery.get_group())
+        print(surgery.get_surgery_id(), np.exp(distribution_dict[surgery.get_group(), 'total_mu'] + norm.ppf(alpha) * np.sqrt(distribution_dict[surgery.get_group(), 'total_sigma'])), surgery.get_group())
     print(len(list_surgery), len(list_surgeon), len(list_room), len(list_date))
+    for d in list_date:
+        for r in list_room:
+            if get_empty_room(r, d, list_surgery, x_val):
+                print(r, d)
     create_excel_file(scheduled_surgery, list_date, list_room, ts_val, x_val)
     create_excel_file2(scheduled_surgery, list_date, list_surgeon, ts_val, q_val)
     graph.create_ganttchart(file_path, save_path)
     graph.create_surgeon_ganttchart(file_path2, save_path)
-
 
 
 def objective_function(lst_surgery, lst_surgeon, lst_room, lst_date, x_val, ot_val, wt_val, ts_val):
