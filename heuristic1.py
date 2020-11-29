@@ -8,8 +8,6 @@ from scipy.stats import norm
 import instance
 import openpyxl as px
 
-# 手術クラス
-
 home = os.environ['HOME']
 directory_path = home + '/Documents/data-july'
 path = directory_path + '/operations_with_jisseki_remake.csv'
@@ -19,19 +17,17 @@ distribution_path = home + '/Documents/surgerySchedule/distribution.csv'
 file_path = home + '/Documents/surgerySchedule/room_schedule_heuristic1.xlsx'
 file_path2 = home + '/Documents/surgerySchedule/surgeon_schedule_heuristic1.xlsx'
 save_path = "/Users/kurodakotaro/Documents/image/DP/"
-num_surgery = 20
-num_date = 1
-seed = 1
-m1 = 10
-m2 = 30
-m3 = 10
-m4 = 30
-m5 = 300
-m6 = 20
-m7 = 5
-m8 = 10
-m9 = 100
-m10 = 10
+num_surgery = 150
+num_date = 7
+seed = 2
+m1 = 1
+m2 = 3
+m3 = 2
+m4 = 4
+m5 = 1
+m6 = 2
+m7 = 0.5
+m8 = 1
 T = 480
 PT = 15
 M = 99999
@@ -478,80 +474,6 @@ def main():
                     for r in list_room:
                         if x_val[surgery, r, d] == 1:
                             scheduled_surgery.append(surgery)
-
-                unscheduled_surgery = list(set(waiting_list) - set(scheduled_surgery))
-                print(len(unscheduled_surgery))
-                for surgery in unscheduled_surgery:
-                    print(len(scheduled_surgery))
-                    ot3 = {}
-                    x2 = {}
-                    for r in list_room:
-                        ot3[r, d] = pulp.LpVariable('ot3({:},{:})'.format(r, d), lowBound=0, cat='Continuous')
-                        x2[surgery, r, d] = pulp.LpVariable('x2({:},{:},{:})'.format(surgery.get_surgery_id(), r, d),
-                                                            cat='Binary')
-                    q2 = {}
-                    for surgeon in list_surgeon:
-                        q2[surgery, surgeon, d] = pulp.LpVariable(
-                            'q2({:},{:},{:})'.format(surgery.get_surgery_id(), surgeon.get_surgeon_id(), d),
-                            cat='Binary')
-                    y2 = {}
-                    z2 = {}
-                    for surgery2 in scheduled_surgery:
-                        for r in list_room:
-                            y2[surgery, surgery2, r, d] = pulp.LpVariable(
-                                'y2({:},{:},{:},{:})'.format(surgery.get_surgery_id(), surgery2.get_surgery_id(), r, d),
-                                cat='Binary')
-                        for surgeon in list_surgeon:
-                            z2[surgery, surgery2, surgeon, d] = pulp.LpVariable(
-                                'z2({:},{:},{:},{:})'.format(surgery.get_surgery_id(), surgery2.get_surgery_id(),
-                                                             surgeon.get_surgeon_id(), d), cat='Binary')
-                    ts2 = {surgery: pulp.LpVariable('ts2({:})'.format(surgery.get_surgery_id()), lowBound=0,
-                                                    cat='Continuous')}
-                    subproblem = pulp.LpProblem('sub', pulp.LpMinimize)
-                    subproblem += m6 * sum(ot3[r, d] for r in list_room) + m8 * ts2[surgery]
-                    subproblem += sum(x2[surgery, r, d] for r in list_room) == 1
-                    subproblem += sum(q2[surgery, surgeon, d] for surgeon in list_surgeon) == 1
-                    for r in dict_not_available_room[surgery]:
-                        subproblem += x2[surgery, r, d] == 0
-                    group = surgery.get_group()
-                    for surgeon in list_surgeon:
-                        if float(surgeon.get_dict_group()[group]) <= 0:
-                            subproblem += q2[surgery, surgeon, d] == 0
-
-                    subproblem += ts2[surgery] >= surgery.get_preparation_mean()
-                    for r in list_room:
-                        for surgery2 in scheduled_surgery:
-                            subproblem += ts2[
-                                              surgery] + surgery.get_surgery_mean() + surgery.get_cleaning_mean() - M * (
-                                                      1 - y2[surgery, surgery2, r, d])  - M * (2 - x2[surgery, r, d] - x_val[surgery2, r, d]) <= ts_val[surgery2] - surgery2.get_preparation_mean()
-                            subproblem += ts2[surgery] - surgery.get_preparation_mean() >= ts_val[
-                                surgery2] + surgery2.get_surgery_mean() + surgery2.get_cleaning_mean() - M * (
-                                                      y2[surgery, surgery2, r, d]) - M * (2 - x2[surgery, r, d] - x_val[surgery2, r, d])
-                    for surgeon in list_surgeon:
-                        for surgery2 in scheduled_surgery:
-                            subproblem += ts2[surgery] + surgery.get_surgery_mean() + PT - M * (
-                                        1 - z2[surgery, surgery2, surgeon, d]) - M * (2 - q2[surgery, surgeon, d] - q_val[surgery2, surgeon, d]) <= ts_val[surgery2]
-                            subproblem += ts2[surgery] >= ts_val[surgery2] + surgery2.get_surgery_mean() + PT - M * (
-                                        z2[surgery, surgery2, surgeon, d]) - M * (2 - q2[surgery, surgeon, d] - q_val[surgery2, surgeon, d])
-                    for r in list_room:
-                        subproblem += ts2[surgery] + surgery.get_surgery_mean() + surgery.get_cleaning_mean() - M * (
-                                    1 - x2[surgery, r, d]) <= ot3[r, d] + T
-                        subproblem += ot3[r, d] <= O_max
-
-                    result_status3 = subproblem.solve(solver)
-                    print(pulp.LpStatus[result_status3])
-                    if pulp.LpStatus[result_status3] != 'Optimal':
-                        continue
-                    else:
-                        for r in list_room:
-                            x_val[surgery, r, d] = round(x2[surgery, r, d].value())
-                            if x_val[surgery, r, d] == 1:
-                                print('x_val({:},{:},{:})={:}'.format(surgery.get_surgery_id(), r, d, x_val[surgery, r, d]))
-                        for surgeon in list_surgeon:
-                            q_val[surgery, surgeon, d] = round(q2[surgery, surgeon, d].value())
-                        ts_val[surgery] = round(ts2[surgery].value())
-                        print('ts({:})={:}'.format(surgery.get_surgery_id(), ts_val[surgery]))
-                        scheduled_surgery.append(surgery)
 
         print('スケジュールされた手術:{:}'.format(len(scheduled_surgery)))
         if len(list_surgery) == len(scheduled_surgery):
