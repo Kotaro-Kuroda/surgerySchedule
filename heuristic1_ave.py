@@ -19,7 +19,7 @@ distribution_path = home + '/Documents/surgerySchedule/distribution.csv'
 file_path = home + '/Documents/surgerySchedule/room_schedule_heuristic1.xlsx'
 file_path2 = home + '/Documents/surgerySchedule/surgeon_schedule_heuristic1.xlsx'
 save_path = "/Users/kurodakotaro/Documents/image/DP/"
-num_surgery = 10
+num_surgery = 15
 num_date = 1
 seed = 1
 m1 = 10
@@ -100,21 +100,15 @@ def objective_function(lst_surgery, lst_surgeon, lst_room, lst_date, x_val, ot_v
 
 
 def sort(list_surgery, ts_val):
-    if len(list_surgery) <= 1 or len(set(list_surgery)) == 1:
-        return list_surgery
-    else:
-        pivot = np.random.choice(list_surgery)
-        pivot_val = ts_val[pivot]
-        left = []
-        right = []
-        for i in range(len(list_surgery)):
-            surgery = list_surgery[i]
-            start_time = ts_val[surgery]
-            if start_time < pivot_val:
-                left.append(surgery)
-            else:
-                right.append(surgery)
-        return sort(left, ts_val) + sort(right, ts_val)
+    for i in range(len(list_surgery) - 1):
+        for j in range(i + 1, len(list_surgery)):
+            surgery1 = list_surgery[i]
+            surgery2 = list_surgery[j]
+            if ts_val[surgery1] > ts_val[surgery2]:
+                temp = surgery1
+                list_surgery[i] = surgery2
+                list_surgery[j] = temp
+    return list_surgery
 
 
 def get_surgeries_in_r(list_surgery, room, date, x_val, ts_val):
@@ -295,7 +289,7 @@ def main():
                 surgery.get_priority() * (1 - pulp.lpSum(x[surgery, r, d, l] for r in list_room)) for surgery in
                 waiting_list)
             objective += m6 * pulp.lpSum(ot[r, d, l] for r in list_room)
-            objective += m9 * pulp.lpSum(ost[surgeon, d, l] for surgeon in list_surgeon) + m10 * ns[d, l]
+            # objective += m9 * pulp.lpSum(ost[surgeon, d, l] for surgeon in list_surgeon) + m10 * ns[d, l]
             operating_room_planning += objective
             for surgery in waiting_list:
                 operating_room_planning += pulp.lpSum(x[surgery, r, d, l] for r in list_room) <= 1
@@ -305,6 +299,7 @@ def main():
             for surgery in waiting_list:
                 operating_room_planning += pulp.lpSum(x[surgery, r, d, l] for r in list_room) == pulp.lpSum(
                     q[surgery, surgeon, d, l] for surgeon in list_surgeon)
+            """
             for surgeon in list_surgeon:
                 operating_room_planning += ost[surgeon, d, l] >= pulp.lpSum(
                     q[surgery, surgeon, d, l] for surgery in waiting_list) - len(waiting_list) / len(list_surgeon)
@@ -312,17 +307,18 @@ def main():
             for surgeon in list_surgeon:
                 operating_room_planning += - ost[surgeon, d, l] <= pulp.lpSum(
                     q[surgery, surgeon, d, l] for surgery in waiting_list) - len(waiting_list) / len(list_surgeon)
-
+            """
             for r in list_room:
                 operating_room_planning += pulp.lpSum(
                     (surgery.get_preparation_mean() + surgery.get_surgery_mean() + surgery.get_cleaning_mean()) * x[
                         surgery, r, d, l] for surgery in waiting_list) - T <= ot[r, d, l]
                 operating_room_planning += ot[r, d, l] <= O_max
-
+            """
             operating_room_planning += ns[d, l] >= pulp.lpSum(
                 x[surgery, r, d, l] for surgery in waiting_list for r in list_room) - len(list_surgery) / len(list_date)
             operating_room_planning += -ns[d, l] <= pulp.lpSum(
                 x[surgery, r, d, l] for surgery in waiting_list for r in list_room) - len(list_surgery) / len(list_date)
+            """
             for surgery in waiting_list:
                 for r in dict_not_available_room[surgery]:
                     operating_room_planning += x[surgery, r, d, l] == 0
@@ -427,6 +423,10 @@ def main():
             operating_room_scheduling += m6 * pulp.lpSum(ot[r, d, l] for r in list_room) + m7 * pulp.lpSum(
                 wt[surgeon, d, l] for surgeon in planned_surgeon) + m8 * pulp.lpSum(
                 surgery.get_priority() * ts[surgery, l] for surgery in planned_surgery)
+
+            for surgery in planned_surgery:
+                operating_room_scheduling += ts[surgery, l] >= surgery.get_preparation_mean()
+
             for r in list_room:
                 list_surgery_in_r = dict_surgery_room[r]
                 for surgery1 in list_surgery_in_r:
@@ -436,8 +436,6 @@ def main():
                                 surgery2, surgery1, r, d, l] == 1, 'c1_' + str(surgery1.get_surgery_id()) + '_' + str(
                                 surgery2.get_surgery_id()) + '_' + str(r)
 
-            for surgery in planned_surgery:
-                operating_room_scheduling += ts[surgery, l] >= surgery.get_preparation_mean()
 
             for r in list_room:
                 list_surgery_in_r = dict_surgery_room[r]
@@ -454,7 +452,8 @@ def main():
                     for surgery2 in list_surgery_by_k:
                         if surgery1 != surgery2:
                             operating_room_scheduling += z[surgery1, surgery2, surgeon, d, l] + z[
-                                surgery2, surgery1, surgeon, d, l] == 1
+                                surgery2, surgery1, surgeon, d, l] == 1, 'c2_' + str(surgery1.get_surgery_id()) + '_' + str(
+                                surgery2.get_surgery_id()) + '_' + str(surgeon.get_surgeon_id())
 
             for surgeon in planned_surgeon:
                 list_surgery_by_k = dict_surgery_surgeon[surgeon]
@@ -495,18 +494,22 @@ def main():
                     for surgery1 in list_surgery_in_r:
                         for surgery2 in list_surgery_in_r:
                             if surgery1 != surgery2:
+                                c1 = operating_room_scheduling.constraints['c1_' + str(surgery1.get_surgery_id()) + '_' + str(
+                                surgery2.get_surgery_id()) + '_' + str(r)]
                                 c = operating_room_scheduling.constraints['room_overlaps_' + str(surgery1.get_surgery_id()) + '_' + str(surgery2.get_surgery_id())]
-                                print('room', c.valid(0))
-                                if not c.valid(0):
+                                print('room', c.valid(0), c1.valid(0))
+                                if not c1.valid(0):
                                     infeasible_pair_room.append((surgery1, surgery2))
                 for surgeon in planned_surgeon:
                     list_surgery_by_k = dict_surgery_surgeon[surgeon]
                     for surgery1 in list_surgery_by_k:
                         for surgery2 in list_surgery_by_k:
                             if surgery1 != surgery2:
+                                c1 = operating_room_scheduling.constraints['c2_' + str(surgery1.get_surgery_id()) + '_' + str(
+                                surgery2.get_surgery_id()) + '_' + str(surgeon.get_surgeon_id())]
                                 c = operating_room_scheduling.constraints['surgeon_overlaps_' + str(surgery1.get_surgery_id()) + '_' + str(surgery2.get_surgery_id())]
-                                print('surgeon', c.valid(0))
-                                if not c.valid(0):
+                                print(surgeon.get_surgeon_id(), c.valid(0), c1.valid(0))
+                                if not c.valid(0) or not c1.valid(0):
                                     infeasible_pair_surgeon.append(
                                         (surgery1, surgery2))
                 continue
@@ -528,6 +531,82 @@ def main():
                     for r in list_room:
                         if x_val[surgery, r, d] == 1:
                             scheduled_surgery.append(surgery)
+                unscheduled_surgery = list(set(waiting_list) - set(scheduled_surgery))
+                print(len(unscheduled_surgery))
+                for surgery in unscheduled_surgery:
+                    print("here")
+                    ot3 = {}
+                    x2 = {}
+                    for r in list_room:
+                        ot3[r, d] = pulp.LpVariable('ot3({:},{:})'.format(r, d), lowBound=0, cat='Continuous')
+                        x2[surgery, r, d] = pulp.LpVariable('x2({:},{:},{:})'.format(surgery.get_surgery_id(), r, d),
+                                                            cat='Binary')
+                    q2 = {}
+                    for surgeon in list_surgeon:
+                        q2[surgery, surgeon, d] = pulp.LpVariable(
+                            'q2({:},{:},{:})'.format(surgery.get_surgery_id(), surgeon.get_surgeon_id(), d),
+                            cat='Binary')
+                    y2 = {}
+                    z2 = {}
+                    for surgery2 in scheduled_surgery:
+                        for r in list_room:
+                            y2[surgery, surgery2, r, d] = pulp.LpVariable(
+                                'y2({:},{:},{:},{:})'.format(surgery.get_surgery_id(), surgery2.get_surgery_id(), r, d),
+                                cat='Binary')
+                            y2[surgery2, surgery, r, d] = pulp.LpVariable(
+                                'y2({:},{:},{:},{:})'.format(surgery2.get_surgery_id(), surgery.get_surgery_id(), r, d),
+                                cat='Binary')
+                        for surgeon in list_surgeon:
+                            z2[surgery, surgery2, surgeon, d] = pulp.LpVariable(
+                                'z2({:},{:},{:},{:})'.format(surgery.get_surgery_id(), surgery2.get_surgery_id(),
+                                                             surgeon.get_surgeon_id(), d), cat='Binary')
+                            z2[surgery2, surgery, surgeon, d] = pulp.LpVariable(
+                                'z2({:},{:},{:},{:})'.format(surgery2.get_surgery_id(), surgery.get_surgery_id(),
+                                                             surgeon.get_surgeon_id(), d), cat='Binary')
+                    ts2 = {}
+                    ts2[surgery] = pulp.LpVariable('ts2({:})'.format(surgery.get_surgery_id()), lowBound=0,
+                                                   cat='Continuous')
+                    subproblem = pulp.LpProblem('sub', pulp.LpMinimize)
+                    subproblem += sum(ot3[r, d] for r in list_room)
+                    subproblem += sum(x2[surgery, r, d] for r in list_room) == 1
+                    subproblem += sum(q2[surgery, surgeon, d] for surgeon in list_surgeon) == 1
+                    subproblem += ts2[surgery] >= surgery.get_preparation_mean()
+                    for r in list_room:
+                        for surgery2 in scheduled_surgery:
+                            subproblem += 2 * (y2[surgery, surgery2, r, d] + y2[surgery2, surgery, r, d]) <= x2[
+                                surgery, r, d] + x_val[surgery2, r, d]
+                            subproblem += y2[surgery, surgery2, r, d] + y2[surgery2, surgery, r, d] >= x2[
+                                surgery, r, d] + x_val[surgery2, r, d] - 1
+                            subproblem += ts2[
+                                              surgery] + surgery.get_surgery_mean() + surgery.get_cleaning_mean() - M * (
+                                                      1 - y2[surgery, surgery2, r, d]) <= ts_val[surgery2] - surgery2.get_preparation_mean()
+                            subproblem += ts2[surgery]  - surgery.get_preparation_mean() >= ts_val[
+                                surgery2] + surgery2.get_surgery_mean() + surgery2.get_cleaning_mean() - M * (
+                                                      1 - y2[surgery2, surgery, r, d])
+                    for surgeon in list_surgeon:
+                        for surgery2 in scheduled_surgery:
+                            subproblem += 2 * (z2[surgery, surgery2, surgeon, d] + z2[surgery2, surgery, surgeon, d]) <= \
+                                          q2[surgery, surgeon, d] + q_val[surgery2, surgeon, d]
+                            subproblem += z2[surgery, surgery2, surgeon, d] + z2[surgery2, surgery, surgeon, d] >= q2[
+                                surgery, surgeon, d] + q_val[surgery2, surgeon, d] - 1
+                            subproblem += ts2[surgery] + surgery.get_surgery_mean() + PT - M * (
+                                        1 - z2[surgery, surgery2, surgeon, d]) <= ts_val[surgery2]
+                            subproblem += ts2[surgery] >= ts_val[surgery2] + surgery2.get_surgery_mean() + PT - M * (
+                                        1 - z2[surgery2, surgery, surgeon, d])
+                    for r in list_room:
+                        subproblem += ts2[surgery] + surgery.get_surgery_mean() + surgery.get_cleaning_mean() - M * (
+                                    1 - x2[surgery, r, d]) <= ot3[r, d] + T
+
+                    result_status3 = subproblem.solve(solver)
+                    if result_status3 == 'infeasible':
+                        break
+                    else:
+                        for r in list_room:
+                            x_val[surgery, r, d] = round(x2[surgery, r, d].value())
+                        for surgeon in list_surgeon:
+                            q_val[surgery, surgeon, d] = round(q2[surgery, surgeon, d].value())
+                        ts_val[surgery] = ts2[surgery].value()
+                        scheduled_surgery.append(surgery)
 
         print('スケジュールされた手術:{:}'.format(len(scheduled_surgery)))
         if len(list_surgery) == len(scheduled_surgery):
@@ -547,7 +626,6 @@ def main():
     over_time = sum(ot_val[r, d] for r in list_room for d in list_date)
     print("残業時間={:}".format(over_time))
     print(len(list_surgery), len(list_surgeon), len(list_room), len(list_date))
-    print("unscheduled_surgery")
     print('scheduled surgery')
     for surgery in scheduled_surgery:
         print(surgery.get_surgery_id(), surgery.get_surgery_mean(), surgery.get_group())
