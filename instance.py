@@ -19,10 +19,12 @@ class SurgeryInstance:
             csv_data = [row for row in reader]
         return csv_data
 
+
     def get_room_list(self, csv_data):
         list_room = sorted(list(set([int(csv_data[i][5]) for i in range(1, len(csv_data)) if csv_data[i][5] != ''])))
         list_room = [str(i) for i in list_room]
         return list_room
+
 
     def get_group_list(self, csv_data):
         list_group = list(set([csv_data[i][6] for i in range(1, len(csv_data))]))
@@ -45,7 +47,7 @@ class SurgeryInstance:
 
     def get_data(self, csv_data):
         np.random.seed(seed=self.seed)
-        index_list = np.random.choice(range(1, len(csv_data)), self.num_surgery)
+        index_list = np.random.choice(range(1, len(csv_data)), self.num_surgery, replace=False)
         data = [csv_data[i] for i in index_list]
         return data
 
@@ -80,9 +82,9 @@ class SurgeryInstance:
                     group = group + '(high)'
 
             distribution_dict = self.get_dict_distribution()
-            preparation_mean = distribution_dict[group, 'preparation_mean']
-            surgery_mean = distribution_dict[group, 'surgery_mean']
-            cleaning_mean = distribution_dict[group, 'cleaning_mean']
+            preparation_mean = round(distribution_dict[group, 'preparation_mean'])
+            surgery_mean = round(distribution_dict[group, 'surgery_mean'])
+            cleaning_mean = round(distribution_dict[group, 'cleaning_mean'])
             random_preparation = int(np.random.lognormal(distribution_dict[group, 'preparation_mu'], distribution_dict[group, 'preparation_sigma'], 1))
             random_surgery = int(np.random.lognormal(distribution_dict[group, 'surgery_mu'], distribution_dict[group, 'surgery_sigma'], 1))
             random_cleaning = int(np.random.lognormal(distribution_dict[group, 'cleaning_mu'], distribution_dict[group, 'cleaning_sigma'], 1))
